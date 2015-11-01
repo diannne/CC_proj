@@ -1,0 +1,410 @@
+//===========================================================================
+//===========================================================================
+//===========================================================================
+//==      Color2Gray.h   ==   Author: Diana-Maria Popa       ==
+//===========================================================================
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#ifndef __COLOR2GRAY__H__
+#define __COLOR2GRAY__H__
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#include "./FreeImage/FreeImage.h"
+#include "Color_Models_Conversions.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#define _CRT_SECURE_NO_WARNINGS
+class Color2Gray
+{
+protected:
+	int _maxIter ;
+
+public:
+
+	enum  GREY_TYPE
+	{
+		BASIC_GREY = 0 ,
+		GOOCH_GREY = 1 
+	};
+	
+	//constructor
+	Color2Gray( KImage *image )
+	{
+		_image = image;
+		_maxIter = 30;		
+	}
+
+	~Color2Gray()
+	{
+		if( _data )
+		{
+			delete [] _data;
+		}
+		if(_dataOutput)
+		{
+			//code style for EA ???
+			delete  [] _dataOutput;
+		}
+		if( _image ) 
+		{
+			delete [] _image ;
+		}
+		if( _goochImage ) 
+		{
+			delete [] _goochImage ;
+		}
+		if( _basicImage ) 
+		{
+			delete [] _basicImage ;
+		}
+		if( _deltas ) 
+		{
+			delete [] _deltas ;
+		}
+		if( _greyOutput ) 
+		{
+			delete [] _greyOutput ;
+		}
+
+	}
+
+	bool getParams(const char * strParams)
+	{
+		char * pch;
+		pch = strtok ((char *)strParams," ,.-");
+		int itr = 1;
+		while (pch != NULL)
+		{
+			char *ptr;
+			if( itr == 1 )
+			{
+				ptr = strstr(pch , "theta=");
+				if( ptr  )
+				{
+					_theta = atof(ptr+6);
+					_theta = _theta * 3.14159 / 180.0;
+				}
+				else 
+				{	
+					_tprintf(_T("Expected parameters <Input_Image_File_Name (24BPP True-Color)> theta=... alpha=... radius=... \n"));
+					return false;
+				}
+					
+			}
+			if( itr == 2 )
+			{
+				ptr = strstr(pch,"alpha=");
+				if( ptr )
+				{
+					_alpha = atof(ptr+6);
+				}
+				else 
+				{	
+					_tprintf(_T("Expected parameters <Input_Image_File_Name (24BPP True-Color)> theta=... alpha=... radius=... \n"));
+					return false;
+				}
+					
+			}
+			if( itr == 3 )
+			{
+				ptr = strstr(pch,"radius=") ;
+				if( ptr )
+				{
+					_radius = atoi(ptr+7);
+				}
+				else 
+				{	
+					_tprintf(_T("Expected parameters <Input_Image_File_Name (24BPP True-Color)> theta=... alpha=... radius=... \n"));
+					return false;
+				}
+					
+			}
+			pch = strtok (NULL, " ,.-");
+			itr++;
+		}
+		return true;
+	}
+
+	KImage * localC2G( const char * strParams , GREY_TYPE Mode = GOOCH_GREY );
+
+	void setMaxIter( unsigned int maxIter )
+	{
+		_maxIter = maxIter;
+	}
+private:
+	//variables
+	double _theta;
+	double _alpha;
+	int _radius;
+
+	//pointer variables
+	CIE_Lab * _data;
+	double * _dataOutput;
+	KImage *_image;
+	KImage *_goochImage;
+	KImage *_basicImage;
+	double *_deltas ;
+	KRGBColor * _greyOutput;
+	KRGBColor * _basicOutput;
+
+	GREY_TYPE _enumType;
+
+	//private functions declaration and definition
+	bool convertToLab() //this populates the _data
+	{
+		if(!_image)
+		{
+			_tprintf(_T("There is no source image \n"));
+			return false;
+		}
+		//*allocate the CIE_Lab 
+		_data = new CIE_Lab[_image->GetWidth()*_image->GetHeight()];
+		_image->BeginDirectAccess();
+		int itr = 0  ; 
+		for(int i = 0;i<_image->GetWidth();++i)
+		{
+			for(int j = 0;j < _image->GetHeight(); ++j)
+			{
+				KRGBColor color ;
+				_image->Get24BPPPixel(j,i,&color);
+				CIE_Lab temp(color);
+				_data[itr].a = temp.a;
+				_data[itr].b = temp.b;
+				_data[itr].L = temp.L;
+				itr++;
+			}
+		}
+		/*output data with a,b =0 to an image*/
+		/*measure how much time it took*/
+		_image->EndDirectAccess();
+		
+		/*FILE *fp = fopen("out","w");
+		for(int i = 0; i < _image->GetWidth() * _image->GetHeight() ; i++ )
+		{
+			fprintf(fp,"%.3f %.3f %.3f\n",_data[i].a,_data[i].b,_data[i].L);
+		}
+		fclose(fp);*/
+		return true;
+	}
+
+	double crunch(double x)
+	{
+		return _alpha == 0 ? 0 : (_alpha*tanh(x/_alpha));
+	}
+
+	double computeDelta( int i, int j )
+	{
+		double dL = _data[i].L - _data[j].L;
+		double dC = sqrt(pow(_data[i].a-_data[j].a,2)  + pow(_data[i].b - _data[j].b,2) );
+		double crunchX = crunch(dC);
+		if( fabs(dL) > crunchX )
+		{
+			return dL;
+		}
+		
+		double vTheta = cos(_theta)*(_data[i].a - _data[j].a) + sin(_theta)*(_data[i].b - _data[j].b);
+		if( (vTheta*crunchX) > 0 )
+			return crunchX;
+		return -crunchX;
+		//return vTheta > 0 ? crunchX : crunch(-dC);
+	}
+
+	void traverseCIELab()
+	{
+		int N = _image->GetWidth() * _image->GetHeight();
+		
+		_deltas = new double[N];
+		/*free me!!!*/
+
+		//initialize to zeroed values
+		for( int i = 0;i< N ; ++i )
+			_deltas[i] = 0.0;
+		
+		if( _radius )
+		{
+			for(int x = 0 ; x < _image->GetWidth() ; ++x )
+			{
+				for( int y = 0 ; y < _image->GetHeight() ; ++y )
+				{
+					int i = x + y*_image->GetWidth(); //position of first relative pixel
+					int x_start  = x - _radius;
+					int x_end = x + _radius;
+					int y_start = y - _radius;
+					int y_end = y + _radius;
+					for(int xx = x_start ; xx <= x_end ; xx++ )
+					{
+						if( xx >= _image->GetWidth() || xx < 0 )
+							continue;
+						for(int yy = y_start; yy <= y_end; yy++)
+						{
+							if( yy >= _image->GetHeight() || yy < 0 )
+								continue;
+							int j = xx + yy*_image->GetWidth();
+							double little_delta = computeDelta(i,j);
+							_deltas[i] += little_delta;
+							_deltas[j]-= little_delta;
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			for(int x = 0 ; x < N - 1 ; ++x )
+			{
+				for( int y = x+1 ; y < N ; ++y )
+				{
+					double little_delta = computeDelta(x,y);
+					_deltas[x] += little_delta;
+					_deltas[y]-= little_delta;
+				}
+			}
+		}
+		FILE *fp = fopen("deltas2.txt","w");
+		for(int i = 0;i<_image->GetWidth() * _image->GetHeight();i++)
+			fprintf(fp,"%.2f\n",_deltas[i]);
+		fclose(fp);
+	}
+
+	void computeOutput()
+	{
+		int N = _image->GetWidth() * _image->GetHeight();
+		//allocate the CIE_Lab output 
+		_dataOutput = new double[N];
+		/*show intermediate progress based on iterations*/
+		/*initializing the gray image to the luminance values*/
+		for( int i = 0; i < N ; ++i )
+			_dataOutput[i] = _data[i].L;
+		if( _radius )
+		{
+			int iter = this->_maxIter;
+			while(iter)
+			{
+				for(int x = 0 ; x < _image->GetWidth(); ++x)
+				{
+					for(int y = 0 ; y < _image->GetHeight() ; ++y )
+					{
+						int i = x + y*_image->GetWidth(); //position of first relative pixel
+						int x_start  = x - _radius;
+						int x_end = x + _radius;
+						int y_start = y - _radius;
+						int y_end = y + _radius;
+						double sum = 0;
+						int count = 0;
+						for(int xx = x_start ; xx <= x_end ; ++xx )
+						{
+							if( xx >= _image->GetWidth() || xx < 0 )
+								continue;
+							for(int yy = y_start; yy <= y_end; ++yy )
+							{
+								if( yy >= _image->GetHeight() || yy < 0 )
+									continue;
+								int j = xx + yy*_image->GetWidth();
+								sum += _dataOutput[j];
+								count++;
+							}
+						}
+						_dataOutput[i]  =  ( _deltas[i] +  sum ) / (double) count;
+					}
+				}
+				iter--;
+			}
+		}
+		else 
+		{
+			for ( int x = 1 ; x < N ; ++ x )
+			{
+				_dataOutput[x]  =  ( _deltas[x] -  _deltas[x-1] + N*_dataOutput[x-1] ) / (double) N ;
+			}
+		}
+		FILE *fp = fopen("dataoutputs2.txt","w");
+		for(int i = 0;i<_image->GetWidth() * _image->GetHeight();i++)
+			fprintf(fp,"%.0f\n",_dataOutput[i]);
+		fclose(fp);
+	}
+	
+	void convertToRgb()
+	{
+		unsigned int N  = _image->GetWidth() * _image->GetHeight() ;
+		if( _enumType == GOOCH_GREY )
+		{
+			_greyOutput = new KRGBColor[N];
+			for( unsigned int i = 0; i < N ; ++i )
+			{
+				_greyOutput[i] = CIE_Lab(_dataOutput[i],0,0).toRGB();
+			}
+		}
+		else if( _enumType == BASIC_GREY )
+		{
+			_basicOutput = new KRGBColor[N];
+			for( unsigned int i = 0; i < N ; ++i )
+			{
+				_basicOutput[i] = CIE_Lab(_data[i].L,0,0).toRGB();
+			}
+		}
+		/*FILE *fp = fopen("out4.txt","w");
+		for(int i = 0;i<_image->GetWidth() * _image->GetHeight();i++)
+			fprintf(fp,"%d %d %d \n",_greyOutput[i].r, _greyOutput[i].g, _greyOutput[i].b);
+		fclose(fp);*/
+	}
+
+	void saveGreyImage()
+	{
+		int N = _image->GetWidth() * _image->GetHeight();
+		int w = _image->GetWidth();
+		int h = _image->GetHeight();
+		
+		switch ( _enumType ) 
+		{
+			case GOOCH_GREY :
+				{
+					_goochImage = new KImage( w, h , _image->GetBPP() );
+					_goochImage->BeginDirectAccess();
+			
+					for( int i = 0; i < N ; ++i )
+					{
+						_goochImage->Put24BPPPixel( i%w , i/h  , &_greyOutput[i] ) ;
+					}
+					_goochImage->EndDirectAccess();
+					break;
+				}
+			case BASIC_GREY :
+				{
+					_basicImage = new KImage( w, h , _image->GetBPP() );
+					_basicImage->BeginDirectAccess();
+			
+					for( int i = 0; i < N ; ++i )
+					{
+						_basicImage->Put24BPPPixel( i%w , i/h  , &_basicOutput[i] ) ;
+					}
+					_basicImage->EndDirectAccess();
+					break;
+				}
+			default:
+				{
+					break;
+				}
+		}
+
+
+	}
+
+	void setEnumType( GREY_TYPE  x )
+	{
+		_enumType = x;
+	}
+};
+#endif

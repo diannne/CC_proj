@@ -1,0 +1,70 @@
+//===========================================================================
+//===========================================================================
+//===========================================================================
+//==     Color2Gray.cpp   ==   Author: Diana-Maria POPA      ==
+//===========================================================================
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#include "stdafx.h"
+#include "Color2Gray.h"
+#include <time.h>
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#pragma comment(lib, "./FreeImage/FreeImage.lib")
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+//returns the greyscaled image-
+
+KImage * Color2Gray::localC2G(const char * strParams, GREY_TYPE Mode )
+{
+	getParams(strParams);
+	clock_t start = clock();
+	convertToLab();
+	
+	switch (Mode) 
+	{
+	case GOOCH_GREY : 
+		{
+			traverseCIELab();
+			//here we compute the output data from the grayscale image
+			computeOutput();
+			setEnumType(this->GOOCH_GREY);
+			//transform the above output data to CIELab
+			convertToRgb();
+			//..and finally save the image
+			saveGreyImage();
+
+			clock_t end = clock();
+			unsigned long time = (end-start)/CLOCKS_PER_SEC;
+			fprintf(stdout, "it took %lu for GOOCH \n" , time);
+			return _goochImage;
+		}
+	case BASIC_GREY : 
+		{
+			setEnumType(this->BASIC_GREY);
+			//transform the above output data to CIELab
+			convertToRgb();
+			//..and finally save the image
+			saveGreyImage();
+			clock_t end = clock();
+			unsigned long time = (end-start)/CLOCKS_PER_SEC;
+			fprintf(stdout, "it took %lu for BASIC Greyscale \n" , time);
+			return _basicImage;
+		}
+	default :
+		{
+			break;
+		}
+	}
+	//should never , ever, ever reach this code 
+	return NULL;
+}

@@ -1,0 +1,10 @@
+Direct_Access_Image_Sample.exe squares.jpg theta=45 alpha=10 radius=0
+::Direct_Access_Image_Sample.exe Sunrise.png theta=45 alpha=5 radius=0
+::Direct_Access_Image_Sample.exe Sunrise.png theta=45 alpha=10 radius=0
+::Direct_Access_Image_Sample.exe Sunrise.png theta=45 alpha=15 radius=0
+::Direct_Access_Image_Sample.exe Sunrise.png theta=45 alpha=25 radius=0
+::Direct_Access_Image_Sample.exe Sunrise.png theta=45 alpha=30 radius=0
+::Direct_Access_Image_Sample.exe Sunrise.png theta=225 alpha=25 radius=0
+::Direct_Access_Image_Sample.exe Sunrise.png theta=270 alpha=25 radius=0::
+::Direct_Access_Image_Sample.exe Sunrise.png theta=315 alpha=25 radius=0
+::Direct_Access_Image_Sample.exe Sunrise.png theta=360 alpha=25 radius=0

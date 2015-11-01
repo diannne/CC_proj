@@ -1,0 +1,315 @@
+//===========================================================================
+//===========================================================================
+//===========================================================================
+//==     MatrixModule.cpp   ==   Author: Diana-Maria POPA      ==
+//===========================================================================
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#include "stdafx.h"
+#include "MatrixModule.h"
+#include <math.h>
+#include <complex>
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#pragma comment(lib, "./FreeImage/FreeImage.lib")
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+
+#define randd() ((double) rand() / (double) RAND_MAX)
+
+
+
+double * MatrixModule::matrix_generate_random(unsigned int size)
+{
+	double * rand_matrix  = new double [size];
+	for ( unsigned int i = 0 ;i < size  ; ++i )
+	{
+		rand_matrix[i] = randd();
+	}
+	return rand_matrix;
+}
+
+void MatrixModule::matrix_gram_schmidt(double *A, unsigned int lines, unsigned int cols, 
+	double *Q   )
+{
+	// Orthnormalization using the Gram-Schmidt algorithm
+
+	// validate input
+	if ( lines  == 0 || cols  == 0) 
+	{
+		fprintf(stderr,"Invalid arguments in Gram Schmidt\n");
+		exit(1);
+	}
+
+	unsigned int i;
+	unsigned int j;
+	unsigned int k;
+
+	// copy into new matrix
+	memmove( Q , A , lines * cols * sizeof(double));
+
+	unsigned int n = lines ;   // dimensionality of each vector
+	double *proj_ij = new double [n];
+
+	for (unsigned int j = 0 ; j < cols ; ++j ) 
+	{
+		for ( unsigned int i = 0; i < j ; ++i ) 
+		{
+
+			// compute proj(v_i, v_j)
+			double vij = 0.;     // dotprod(v_i, v_j)
+			double vii = 0.;     // dotprod(v_i, v_i)
+			double ti;
+			double tj;
+			for (unsigned int k = 0; k < n; ++k ) 
+			{
+				ti = matrix_access(Q, lines, cols, k, i);
+				tj = matrix_access(Q, lines, cols, k, j);
+				vij += ti * tj;
+				vii += ti * ti;
+			}
+			// TODO : vii should be 1.0 from normalization step below
+			double g = vij / vii;
+
+			// complete projection
+			for (unsigned int k = 0 ; k < n; ++k )
+			{
+				proj_ij[k] = matrix_access(  Q , lines, cols, k, i) * g;
+			}
+
+			// subtract projection from v_j
+			for ( unsigned int k = 0; k < n; ++k ) 
+			{
+				matrix_access( Q , lines, cols, k, j ) -= proj_ij[k];
+			}
+		}
+
+		// normalize v_j
+		double vjj = 0.;     // dotprod(v_j, v_j)
+		double tj  = 0.;
+		for ( unsigned int k = 0; k < n; ++k ) 
+		{
+			tj = matrix_access( Q , lines, cols, k, j);
+			vjj += tj * tj;
+		}
+		// TODO : check magnitude of vjj
+		double g = 1. / sqrt( vjj );
+		for ( unsigned int k = 0; k < n; ++k ) 
+		{
+			matrix_access( Q , lines, cols , k , j) *= g;
+		}
+	}
+	delete [] proj_ij;
+}
+
+double * MatrixModule::matrix_multiply ( double * _X, unsigned int _XR, unsigned int _XC,
+	double * _Y, unsigned int _YR, unsigned int _YC,
+	double * _Z, unsigned int _ZR, unsigned int _ZC )
+{
+	// ensure lengths are valid
+	if ( _ZR != _XR || _ZC != _YC || _XC != _YR ) {
+		fprintf(stderr,"invalid dimensions in multiplication \n");
+		exit(1);
+	}
+
+	unsigned int r, c, i;
+
+	for (unsigned int r=0; r<_ZR; ++r ) 
+	{
+		for ( unsigned int c = 0 ; c < _ZC; ++c ) 
+		{
+			double sum = 0.0f;
+			for ( unsigned int i = 0; i < _XC; ++i ) 
+			{
+				sum += matrix_access(_X,_XR,_XC,r,i) *
+					matrix_access(_Y,_YR,_YC,i,c);
+			}
+			matrix_access(_Z,_ZR,_ZC,r,c) = sum ;
+		}
+	}
+}
+void MatrixModule::matrix_copy(double * toCopy , const double * fromCopy , unsigned int size ) 
+{
+	for(unsigned int i = 0 ; i < size ; ++ i )
+	{
+		toCopy[i] = fromCopy[i];
+	}
+}
+//matrix inverse of a square matrix
+void MatrixModule::matrix_inverse( double * _X, unsigned int _XR, unsigned int _XC)
+{
+	// ensure lengths are valid
+	if ( _XR != _XC )
+	{
+		fprintf(stderr, "error: matrix_inv(), invalid dimensions\n");
+		exit(1);
+	}
+
+	// X:
+	//  x11 x12 ... x1n
+	//  x21 x22 ... x2n
+	//  ...
+	//  xn1 xn2 ... xnn
+
+	// allocate temporary memory
+	double *x = new double[2*_XR*_XC];
+	unsigned int xr = _XR;
+	unsigned int xc = _XC*2;
+
+	// x:
+	//  x11 x12 ... x1n 1   0   ... 0
+	//  x21 x22 ... x2n 0   1   ... 0
+	//  ...
+	//  xn1 xn2 ... xnn 0   0   ... 1
+	for (unsigned int r = 0; r < _XR ; ++r ) 
+	{
+		// copy matrix elements
+		for (unsigned int c = 0; c<_XC; ++c )
+		{
+			matrix_access(x,xr,xc,r,c) = matrix_access(_X,_XR,_XC,r,c);
+		}
+
+		// append identity matrix
+		for (unsigned int c = 0; c < _XC; ++c )
+		{
+			matrix_access(x,xr,xc,r,_XC+c) = (r==c) ? 1 : 0;
+		}
+	}
+
+	// perform Gauss-Jordan elimination on x
+	// x:
+	//  1   0   ... 0   y11 y12 ... y1n
+	//  0   1   ... 0   y21 y22 ... y2n
+	//  ...
+	//  0   0   ... 1   yn1 yn2 ... ynn
+
+	matrix_GJelimination(x,xr,xc);
+	// copy result from right half of x
+	for (unsigned int r=0; r<_XR; ++r ) 
+	{
+		for (unsigned int c=0; c<_XC; ++c )
+		{
+			matrix_access(_X,_XR,_XC,r,c) = matrix_access(x,xr,xc,r,_XC+c);
+		}
+	}
+	delete [] x;
+}
+// Gauss-Jordan elmination
+void MatrixModule::matrix_GJelimination(double * _X, unsigned int _XR, unsigned int _XC)
+{
+	// choose pivot rows based on maximum element along column
+	float v;
+	float v_max=0.;
+	unsigned int r_opt=0;
+
+	for ( unsigned int r =  0; r < _XR; ++r ) 
+	{
+
+		// check values along this column and find the optimal row
+		for (unsigned int r_hat = r ; r_hat < _XR;  r_hat++) 
+		{
+			v = fabs( matrix_access(_X,_XR,_XC,r_hat,r) );
+			// swap rows if necessary
+			if ( v > v_max || r_hat == r ) 
+			{
+				r_opt = r_hat;
+				v_max = v;
+			}
+		}
+		// if the maximum is zero, matrix is singular
+		if ( v_max == 0.0f ) 
+		{
+			fprintf(stderr,"warning: matrix_gjelim(), matrix singular to machine precision\n");
+		}
+
+		// if row does not match column (e.g. maximum value does not
+		// lie on the diagonal) swap the rows
+		if (r != r_opt) 
+		{
+			matrix_swaprows(_X,_XR,_XC,r,r_opt);
+		}
+
+		// pivot on the diagonal element
+		matrix_pivot(_X,_XR,_XC,r,r);
+	}
+	// scale by diagonal
+	double g;
+	for (unsigned int r = 0 ; r < _XR; ++r ) 
+	{
+		g = 1 / matrix_access(_X,_XR,_XC,r,r);
+		for (unsigned int c=0; c < _XC; c++ )
+		{
+			matrix_access(_X,_XR,_XC,r,c) *= g;
+		}
+	}
+}
+// pivot on element _r, _c
+void MatrixModule::matrix_pivot( double * _X, unsigned int _XR, unsigned int _XC, 
+	unsigned int _r, unsigned int _c)
+{
+	double v = matrix_access(_X,_XR,_XC,_r,_c);
+	if ( v == 0 ) 
+	{
+		fprintf(stderr, "warning: matrix_pivot(), pivoting on zero matrix_inv 607 \n");
+		return;
+	}
+	unsigned int r,c;
+
+	// pivot using back-substitution
+	double g;			// multiplier
+	for (unsigned int r = 0; r < _XR; ++r ) 
+	{
+
+		// skip over pivot row
+		if (r == _r)
+			continue;
+
+		// compute multiplier
+		g = matrix_access(_X,_XR,_XC,r,_c) / v;
+		// back-substitution
+		for (unsigned int c = 0; c < _XC; ++c )  
+		{
+			matrix_access(_X,_XR,_XC,r,c) = g*matrix_access(_X,_XR,_XC,_r,c) -
+				matrix_access(_X,_XR,_XC, r,c);
+		}
+	}
+}
+
+
+void MatrixModule::matrix_swaprows(double * _X, unsigned int _XR, unsigned int _XC, 
+	unsigned int _r1, unsigned int _r2)
+{
+	unsigned int c;
+	for (unsigned int c=0; c<_XC; ++c ) 
+	{
+		double v_tmp = matrix_access(_X,_XR,_XC,_r1,c);
+		matrix_access(_X,_XR,_XC,_r1,c) = matrix_access(_X,_XR,_XC,_r2,c);
+		matrix_access(_X,_XR,_XC,_r2,c) = v_tmp;
+	}
+}
+
+void MatrixModule::matrix_solvelinear(double * A, unsigned int mA, unsigned int nA, 
+	double *b, unsigned int mB, unsigned int nB, 
+	double *)
+{
+
+}
+void MatrixModule::matrix_add(double * _X,
+	double * _Y,
+	double * _Z,
+	unsigned int _R,
+	unsigned int _C)
+{
+
+	for (unsigned int i=0; i< (_R*_C) ; ++i )
+		_Z[i] = _X[i] + _Y[i];
+}

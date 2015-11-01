@@ -1,0 +1,48 @@
+//===========================================================================
+//===========================================================================
+//===========================================================================
+//==      MatrixModule.h   ==   Author: Diana-Maria Popa       ==
+//===========================================================================
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#ifndef __MATRIXMODULE__H__
+#define __MATRIXMODULE__H__
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#include <stdio.h>
+#include <stdlib.h>
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#define matrix_access(X,R,C,r,c) ((X)[(r)*(C)+(c)])
+class MatrixModule
+{
+public :
+	double * matrix_generate_random(unsigned int);
+	void matrix_gram_schmidt( double * , unsigned int  , unsigned int ,double * );
+	double * matrix_multiply(	double *  ,unsigned int , unsigned int, 
+								double * , unsigned int, unsigned int, 
+								double * , unsigned int , unsigned int );
+	void matrix_copy(double * , const double [] , unsigned int );
+
+	void matrix_GJelimination(double *, unsigned int , unsigned int);
+	void matrix_solvelinear(double *, unsigned int , unsigned int , 
+							double *, unsigned int , unsigned int , 
+							double *);
+	void matrix_pivot( double * _X, unsigned int _XR, unsigned int _XC, 
+	unsigned int _r, unsigned int _c);
+	void matrix_swaprows(double * _X, unsigned int _XR, unsigned int _XC, 
+	unsigned int _r1, unsigned int _r2);
+	void matrix_inverse( double * _X, unsigned int _XR, unsigned int _XC);
+	void matrix_add(double *  , double * , double * , unsigned int , unsigned int );
+	
+};
+#endif

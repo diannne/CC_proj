@@ -1,0 +1,158 @@
+//===========================================================================
+//===========================================================================
+//===========================================================================
+//==     PdfTransfer.cpp   ==   Author: Diana-Maria POPA      ==
+//===========================================================================
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#include "stdafx.h"
+#include "PdfTransfer.h"
+#include "MatrixModule.h"
+#include <math.h>
+
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#pragma comment(lib, "./FreeImage/FreeImage.lib")
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#define NUM_CHANNELS 3
+PdfTransfer::PdfTransfer(unsigned int iter , unsigned int proj , unsigned int size1, 
+	unsigned int size2)
+{
+	_iterations = iter;
+	_projections = proj;
+	_inputSize = size1;
+	_paletteSize = size2;
+	_matrixModule = new MatrixModule();
+	assert(_matrixModule);
+}
+PdfTransfer::~PdfTransfer()
+{
+	
+}
+void printMatrix(double *Matrix, int lines , int cols , char *mname)
+{
+	char name[100];
+	sprintf(name, "test_%s.txt",mname);
+	FILE *fp = fopen(name,"w");
+	assert(fp);
+	for (unsigned int i = 0 ; i < lines ; i++ )
+	{
+		for(unsigned int j = 0 ; j < cols ; j++ )
+		{
+			fprintf( fp, "%d %d %.5f\n",i,j,matrix_access(Matrix , lines,cols, i, j ) );
+
+		}
+	}
+}
+KImage * PdfTransfer::NDPdfTransfer( double  *input , double *palette  , double **rotations)
+{
+	for (unsigned int i = 0 ; i < _iterations ; ++ i )
+	{
+		double * ptrRotation = rotations[i];
+		assert(ptrRotation);
+		double *inputRotation = new double[_projections*_inputSize];
+		double *paletteRotation = new double[_projections*_paletteSize];
+		_matrixModule->matrix_multiply( ptrRotation , _projections , NUM_CHANNELS , 
+			input , NUM_CHANNELS , _inputSize , inputRotation , _projections, _inputSize ) ;
+		//debugging
+		if( !i )
+		{
+			printMatrix( ptrRotation , _projections, NUM_CHANNELS ,"ptrRotation" ) ;
+			printMatrix( input , NUM_CHANNELS, _inputSize , "input") ;
+			printMatrix( inputRotation , _projections, _inputSize , "inputRotation") ; 
+		}
+		_matrixModule->matrix_multiply( ptrRotation , _projections , NUM_CHANNELS , 
+			palette , NUM_CHANNELS , _paletteSize , paletteRotation , _projections, _paletteSize ) ;
+		
+		Histogram **histogramsInput = CreateHistograms( inputRotation , _projections , _inputSize ) ;
+		Histogram **histogramsPalette = CreateHistograms( paletteRotation , _projections , _paletteSize ) ;
+
+	}
+	return NULL;
+}
+
+Histogram ** PdfTransfer::CreateHistograms(double *Matrix , unsigned int lines , unsigned int columns )
+{
+	if ( !lines || !columns)
+	{
+		fprintf(stderr, "Invalid arguments for creating histogram \n");
+		return NULL;
+	}
+	static int var = 0 ;
+	Histogram **histograms = new Histogram*[lines];
+	
+	
+	FILE *fp2;
+	FILE *fp;
+	if(!var)
+	{
+		fp = fopen("test2.txt ", "w");
+		fp2 = fopen("test3.txt ", "w");
+	}
+	for (unsigned int i = 0 ; i < lines ; ++i )
+	{
+		double minimum ,  maximum ;
+		minimum = maximum = matrix_access(Matrix , lines,columns, i, 0 )  ;
+		
+		//finding minumum and maximum per line
+		for (unsigned int j = 0 ; j < columns ; ++j )
+		{
+			if( matrix_access(Matrix , lines,columns, i, j )  < minimum )
+			{
+				minimum = matrix_access( Matrix , lines,columns, i, j )  ;
+			}
+			if (matrix_access(Matrix , lines,columns, i, j )  > maximum )
+			{
+				maximum = matrix_access(Matrix , lines,columns, i, j )  ;
+			}
+		}
+		double step = (maximum - minimum)/300.0;
+		histograms[i] = new Histogram[301];
+		
+		for (unsigned int j = 0 ; j < columns ; ++j )
+		{
+			double aux = matrix_access( Matrix , lines,columns, i, j ) ;
+			double dblPos =  ( matrix_access( Matrix , lines,columns, i, j ) - minimum ) / step;
+			int pos = floor(dblPos);
+
+			//debugging
+			if(!i && !var)
+			{
+				fprintf(fp2, "%d %d %d %.5f\n" , pos , i, j , matrix_access( Matrix , lines,columns, i, j ) );
+			}
+
+			assert( pos < 301 );
+			assert (pos >= 0 );
+			histograms[i][pos].incrementCounter();
+			histograms[i][pos].SetInferiorLimit( minimum + pos*step );
+			histograms[i][pos].SetSuperiorLimit( minimum + (pos+1)*step );
+			
+		}
+		
+		//debugging
+		if( !i && !var)
+		{
+			
+			for (unsigned int j = 0 ; j < 301 ; ++j )
+			{
+				fprintf(fp, "%d %d\n" , j , histograms[i][j].getCounter() );
+			}
+			
+		}
+		//generate matrix of histotgram
+		
+	}
+	var++;
+	return histograms;
+}
+	

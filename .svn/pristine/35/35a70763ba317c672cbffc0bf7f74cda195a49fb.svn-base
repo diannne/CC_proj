@@ -1,0 +1,502 @@
+//===========================================================================
+//===========================================================================
+//===========================================================================
+//==     PdfTransfer.cpp   ==   Author: Diana-Maria POPA      ==
+//===========================================================================
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#include "stdafx.h"
+#include "PdfTransfer.h"
+#include "MatrixModule.h"
+#include <math.h>
+#include <algorithm>
+#include <time.h>
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#pragma comment(lib, "./FreeImage/FreeImage.lib")
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#define NUM_CHANNELS 3
+const int bin_count = 300;
+static double _root ;
+
+static int sBigPos;
+static int sSmallPos;
+static int sEqual ;
+bool sEqualPos;
+PdfTransfer::PdfTransfer(unsigned int iter , unsigned int proj , unsigned int size1, 
+	unsigned int size2)
+{
+	_iterations = iter;
+	_projections = proj;
+	_inputSize = size1;
+	_paletteSize = size2;
+	_matrixModule = new MatrixModule();
+	assert(_matrixModule);
+}
+PdfTransfer::~PdfTransfer()
+{
+
+}
+void printMatrix(double *Matrix, unsigned int lines , unsigned int cols , char *mname)
+{
+	char name[100];
+	sprintf(name, "test_%s.txt",mname);
+	FILE *fp = fopen(name,"w");
+	assert(fp);
+	for (unsigned int i = 0 ; i < lines ; i++ )
+	{
+		for(unsigned int j = 0 ; j < cols ; j++ )
+		{
+			fprintf( fp, "i=%d j=%d val=%.5f\n",i,j,matrix_access(Matrix , lines,cols, i, j ) );
+
+		}
+	}
+	fclose(fp);
+}
+void printHistogr( Histogram **input, unsigned int size )
+{
+	FILE *fp = fopen("histo.txt","w");
+	assert(fp);
+	for (unsigned int i = 0 ; i < size ; ++ i )
+	{
+		for( unsigned int j = 0 ; j < bin_count + 1; ++j )
+		{
+			fprintf( fp, "%d %d %d\n",i,j,input[i][j].getCounter() );
+		}
+		fprintf( fp,"\n");
+	}
+	fclose(fp);
+}
+bool PdfTransfer::NDPdfTransfer( double  *input , double *palette  , double **rotations)
+{
+	//debugging
+	clock_t start , end , start1;
+	FILE *fp = fopen("time.txt","w");
+	unsigned long int var_time = 0 ;
+	double *inputRotation = new double[_projections*_inputSize];
+	double *paletteRotation = new double[_projections*_paletteSize];
+	double *finalPic = new double[_projections*_inputSize];
+
+	for ( unsigned int i = 0 ; i < _iterations ; ++ i )
+	{
+		start1 = clock();
+		double * ptrRotation = rotations[i];
+		assert(ptrRotation);
+		_matrixModule->matrix_multiply( ptrRotation , _projections , NUM_CHANNELS , 
+			input , NUM_CHANNELS , _inputSize , inputRotation , _projections, _inputSize ) ;
+		//debugging
+		/*if( !i )
+		{
+		printMatrix( ptrRotation , _projections, NUM_CHANNELS ,"ptrRotation" ) ;
+		printMatrix( input , NUM_CHANNELS, _inputSize , "input") ;
+		printMatrix( inputRotation , _projections, _inputSize , "inputRotation") ; 
+		}*/
+		_matrixModule->matrix_multiply( ptrRotation , _projections , NUM_CHANNELS , 
+			palette , NUM_CHANNELS , _paletteSize , paletteRotation , _projections, _paletteSize ) ;
+
+		Histogram ** histogramsInput = new Histogram*[_projections];
+		Histogram ** histogramsPalette = new Histogram*[_projections];
+
+		//Step1: Creation of Histograms
+		CreateHistograms( inputRotation , _inputSize , 
+			paletteRotation , _paletteSize , _projections , histogramsInput , histogramsPalette) ;
+
+
+		//debugging
+		//printHistogr(histogramsInput,_projections);
+
+		std::vector<double> *inter = new  std::vector<double>[_projections];
+		for (unsigned int j = 0 ; j < _projections ; ++ j )
+		{
+			start = clock();
+			std::vector<double> ptr = SinglePdfTransfer( histogramsInput[j] , histogramsPalette[j]);
+
+			std::vector<double> newPtr (ptr.begin()+1,ptr.end()-1);
+			double scale = bin_count / (histogramsInput[j]->GetOverallMax() - 
+				histogramsInput[j]->GetOverallMin());
+			//populate X points before interpolation 
+			std::vector<double> X(newPtr.size());
+			for( unsigned int k = 0 ; k < X.size() ; ++k )
+			{
+				X[k] = (double)k;
+			}
+			std::vector<double> Xq(_inputSize);
+			unsigned int itr = 0; 
+			for (unsigned k = j* _inputSize; k < (j+1)* _inputSize ; ++ k, ++itr )
+			{
+				Xq[itr] = inputRotation[k];
+				Xq[itr] =  (Xq[itr] - histogramsInput[j]->GetOverallMin()) * scale;
+			}
+
+			//@@@@@
+			inter[j] = linearInterpolation( X , newPtr , Xq );
+
+			//debugging
+			end = clock();
+			var_time = (end - start)/(CLOCKS_PER_SEC);
+			//fprintf(fp, "It took %d seconds to complete %s at %d iteration\n",var_time,"linearInterp",j);
+			start = clock();
+			for( unsigned int k = 0 ; k < inter[j].size() ; ++k )
+			{
+				inter[j][k] = inter[j][k]/scale + histogramsInput[j]->GetOverallMin();
+				inter[j][k] -= matrix_access( inputRotation , _projections, _inputSize, j, k );
+				matrix_access( finalPic , _projections, _inputSize, j, k ) = inter[j][k];
+
+			}
+
+			end = clock();
+			var_time = (end - start)/(CLOCKS_PER_SEC);
+			//fprintf(fp, "It took %d seconds to complete %s at %d iteration\n",var_time,"Adjusting Linear",j);
+		}
+		//resolve linear system of ptrRotation*x = inter
+		start = clock();
+		_matrixModule->matrix_inverse(ptrRotation, _projections , NUM_CHANNELS );
+		double *aux  = new double[ _projections * _inputSize ];
+		_matrixModule->matrix_multiply(ptrRotation, _projections , NUM_CHANNELS,
+			finalPic , _projections, _inputSize ,
+			aux, _projections , _inputSize);
+		_matrixModule->matrix_add(  input , aux , input , _projections , _inputSize );
+
+		end = clock();
+		var_time = (end - start1)/(CLOCKS_PER_SEC);
+		//fprintf(fp, "It took %d seconds to complete %s at %d iteration\n",var_time,"solving linear ",i);
+		//@debugging
+		/*if(!i)
+		{
+		char filename[10];
+		sprintf(filename,"iter%d",i);
+		printMatrix(input, _projections, _inputSize, filename);
+		}*/
+
+		end = clock();
+		var_time = (end - start1)/(CLOCKS_PER_SEC);
+		fprintf(stdout, "It took %d seconds to complete %d iteration\n",var_time, i);
+
+	}
+
+	//freeing heap
+	delete [] inputRotation;
+	delete [] paletteRotation;
+	delete [] finalPic;
+
+	//debugging
+	fclose(fp);
+	return true;
+}
+
+std::vector<double> PdfTransfer::SinglePdfTransfer( Histogram *input , Histogram *palette) 
+{
+	/*double *original = new double[ bin_count + 3];
+	double *target = new double[ bin_count + 3];*/
+	std::vector<double> original (bin_count + 1);
+	std::vector<double> target (bin_count + 1);
+	unsigned int globalIC = input->getGlobalCounter();
+	unsigned int globalTC = palette->getGlobalCounter();
+	std::vector<double> finalO (bin_count + 3);
+	std::vector<double> finalT (bin_count + 3);
+	std::vector<double> values (bin_count + 3);
+	//to help maintain the interpolation correct
+	finalO[0] = 0;
+	original[0] = input[0].getCounter();
+	finalO[1] = original[0]/globalIC;
+	finalO[bin_count+2] = (double) bin_count + 1;
+
+	finalT[0] = 0;
+	target[0] = palette[0].getCounter();
+	finalT[1] = target[0]/globalTC;
+	finalT[bin_count+2] = (double) bin_count + 1;
+
+	for( unsigned int i = 1 ; i <= bin_count ; ++i )
+	{
+		original[i] = original[i-1] + input[i].getCounter();
+		finalO[i+1] = original[i]/globalIC;
+
+		target[i] = target[i-1] +  palette[i].getCounter();
+		finalT[i+1] = target[i]/globalTC;
+	}
+
+	//populate values
+	values[0] = 0.0;
+	for( unsigned int i = 1 ; i < bin_count + 3 ; ++i )
+	{
+		values[i] = (double)i-1;
+	}
+	return linearInterpolation( finalT, values, finalO );
+}
+
+bool IsGreater( double thisOne )
+{
+	sBigPos++;
+	if( thisOne == _root )
+	{
+		sEqual = sBigPos ; 
+		return true;
+	}
+	return thisOne > _root ;
+}
+
+bool IsSmaller( double thatOne )
+{
+	sSmallPos --;
+	if( thatOne == _root )
+	{
+		sEqual = sSmallPos;
+		return true;
+	}
+	return thatOne < _root ; 
+}
+
+
+std::vector<double>::iterator upper_bound (std::vector<double>::iterator first, 
+	std::vector<double>::iterator last, const double& val)
+{
+	std::vector<double>::iterator it;
+	std::iterator_traits<std::vector<double>::iterator>::difference_type count, step;
+	count = std::distance(first,last);
+	while ( count > 0 )
+	{
+		it = first; 
+		step = count/2;
+		std::advance (it,step);
+		if ( !(val<*it) )
+		{ 
+			first = it;
+			break;
+		}
+		else 
+		{
+			count = step;
+		}
+	}
+	std::vector<double>::iterator from = first;
+	while ( from != last - 1)
+	{
+		if( *(from+1) <= val )
+		{
+			from++;
+		}
+		else
+		{
+			break;
+		}
+
+	}
+	if( *from == val)
+	{
+		sEqualPos = true;
+	}
+	return from;
+}
+
+std::vector<double> PdfTransfer::linearInterpolation( std::vector<double> X ,std::vector<double> V ,
+	std::vector<double> Xq )
+{
+	std::vector<double>::iterator it = Xq.begin();
+	std::vector<double>::iterator from = Xq.end();
+
+	std::vector<double> result( Xq.size());
+	unsigned int pos = 0 ;
+
+	while( it != from )
+	{
+		_root = *it;
+		sEqualPos = false;
+		
+		////optimized version
+		std::vector<double>::iterator low,up;
+		low = std::lower_bound (X.begin() , X.end(), _root);
+		up =  upper_bound (X.begin() , X.end(), _root);
+		int posS,posB;
+		posS = low - X.begin();
+		posB = up - X.begin();
+		if( sEqualPos == true )
+		{
+			result[pos++] = V[posS];
+		}
+		else
+		{
+			//get last value in case no other bigger value has been found
+			//there is no risk for the other  one
+			if( low == X.end() )
+			{
+				result[pos++] = (double) V[V.size()-1];
+			}
+
+			else 
+			{
+				result[pos++] = (double) V[posB] + ((double)(V[posS] - V[posB])*
+					( _root - *up )/(*low - *up));
+			}
+		}
+		it++;
+	}
+	return result;
+}
+
+std::vector<double> PdfTransfer::oldLinearInterpolation( std::vector<double> X ,std::vector<double> V ,
+	std::vector<double> Xq )
+{
+	std::vector<double>::iterator it = Xq.begin();
+	std::vector<double>::iterator from = Xq.end();
+
+	std::vector<double> result( Xq.size());
+	unsigned int pos = 0 ;
+
+	while( it != from )
+	{
+		_root = *it;
+		sBigPos = -1; 
+		sEqual = -3;
+		sSmallPos = X.size() ;
+		std::vector<double>::iterator itBig = std::find_if ( X.begin() , X.end() , IsGreater);
+		std::vector<double>::reverse_iterator itSmall = std::find_if ( X.rbegin() , X.rend() , IsSmaller);
+
+		////optimized version
+		std::vector<double>::iterator low,up;
+		low = std::lower_bound (X.begin() , X.end(), _root);
+		//up =  upper_bound (X.begin() , X.end(), _root);
+		int posS,posB;
+		posS = low-X.begin();
+		if( low != X.end() && itBig!= X.end() && *itBig != *low && posS != sSmallPos )
+		{
+			printf("Something...\n");
+			posS = low-X.begin();
+			posB = up-X.begin();
+		}
+		if( sSmallPos < 0 )
+			sSmallPos = 0;
+		if( sEqual != -3 )
+		{
+			result[pos++] = V[sBigPos];
+			//result[pos] = *low;
+		}
+		else
+		{
+			/*result[pos++] = (double) sSmallPos + ((double)(sBigPos - sSmallPos)*
+			( _root - *itSmall )/(*itBig - *itSmall));*/
+			if( itBig == X.end() )
+			{
+				result[pos++] = (double) V[V.size()-1]; //get last value
+			}
+
+			else 
+			{
+				result[pos++] = (double) V[sSmallPos] + ((double)(V[sBigPos] - V[sSmallPos])*
+					( _root - *itSmall )/(*itBig - *itSmall));
+			}
+		}
+		it++;
+
+
+	}
+	return result;
+}
+
+void PdfTransfer::CreateHistograms( double *input ,  unsigned int iSize , 
+	double *palette , unsigned int pSize , 
+	unsigned int projections , 
+	Histogram  **orig , Histogram  **target )
+{
+	static int var = 0 ;
+	assert(orig);
+	assert(target);
+
+	for ( unsigned int i = 0 ; i < projections ; ++i )
+	{
+		double minimum ,  maximum ;
+		minimum = maximum = matrix_access( input , projections, iSize, i, 0 )  ;
+
+		//finding minumum and maximum per line for input matrix
+		for ( unsigned int j = 0 ; j < iSize ; ++j )
+		{
+			if( matrix_access( input , projections, iSize, i, j )  < minimum )
+			{
+				minimum = matrix_access( input , projections , iSize, i, j )  ;
+			}
+			if (matrix_access( input , projections, iSize, i, j )  > maximum )
+			{
+				maximum = matrix_access( input , projections, iSize, i, j )  ;
+			}
+		}
+
+		//finding minumum and maximum per line for palette matrix
+		for (unsigned int j = 0 ; j < pSize ; ++j )
+		{
+			if( matrix_access( palette , projections,pSize, i, j )  < minimum )
+			{
+				minimum = matrix_access( palette , projections, pSize, i, j )  ;
+			}
+			if (matrix_access( palette , projections , pSize, i, j )  > maximum )
+			{
+				maximum = matrix_access( palette , projections, pSize, i, j )  ;
+			}
+		}
+
+
+		double step = (maximum - minimum)/(double) bin_count;
+		orig[i] = new Histogram[ bin_count + 1];
+
+		for (unsigned int j = 0 ; j < iSize ; ++j )
+		{
+			double dblPos =  ( matrix_access( input , projections, iSize, i, j ) - minimum ) / step;
+			int pos = static_cast<int>(floor(dblPos));
+
+			assert( pos < bin_count + 1 );
+			assert (pos >= 0 );
+			orig[i][pos].incrementCounter();
+			orig[i][pos].SetInferiorLimit( minimum + pos*step );
+			orig[i][pos].SetSuperiorLimit( minimum + (pos+1)*step );
+			orig[i]->incrementGlobalCounter();
+			orig[i]->SetOverallMax(maximum);
+			orig[i]->SetOverallMin(minimum);
+
+		}
+
+		target[i] = new Histogram[ bin_count + 1];
+		for (unsigned int j = 0 ; j < pSize ; ++j )
+		{
+			double dblPos =  ( matrix_access( palette , projections, pSize, i, j ) - minimum ) / step;
+			int pos = static_cast<int>(floor(dblPos));
+
+			assert( pos < bin_count + 1 );
+			assert (pos >= 0 );
+			target[i][pos].incrementCounter();
+			target[i][pos].SetInferiorLimit( minimum + pos*step );
+			target[i][pos].SetSuperiorLimit( minimum + (pos+1)*step );
+			target[i]->incrementGlobalCounter();
+			target[i]->SetOverallMax(maximum);
+			target[i]->SetOverallMin(minimum);
+
+		}
+
+		//debugging
+
+		//if( !var)
+		//{
+		//	FILE *fp = NULL ;
+		//	char name[100];
+		//	sprintf(name, "histo%d.txt",i);
+
+		//	fp = fopen(name , "w");
+		//	for (unsigned int j = 0 ; j < 301 ; ++j )
+		//	{
+		//		fprintf(fp, " pos %d orig %d palette %d \n" , j , 
+		//			orig[i][j].getCounter() , target[i][j].getCounter() );
+		//	}
+		//	fclose(fp);
+
+		//}
+
+	}
+	var++;
+}

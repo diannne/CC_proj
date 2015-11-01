@@ -1,0 +1,146 @@
+//===========================================================================
+//===========================================================================
+//===========================================================================
+//==     MatrixModule.cpp   ==   Author: Diana-Maria POPA      ==
+//===========================================================================
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#include "stdafx.h"
+#include "MatrixModule.h"
+#include <math.h>
+#include <complex>
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#pragma comment(lib, "./FreeImage/FreeImage.lib")
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+
+#define randd() ((double) rand() / (double) RAND_MAX)
+
+
+
+double * MatrixModule::matrix_generate_random(unsigned int size)
+{
+	double * rand_matrix  = new double [size];
+	for ( unsigned int i = 0 ;i < size  ; ++i )
+	{
+		rand_matrix[i] = randd();
+	}
+	return rand_matrix;
+}
+
+void MatrixModule::matrix_gram_schmidt(double *A, unsigned int lines, unsigned int cols, 
+	double *Q   )
+{
+	// Orthnormalization using the Gram-Schmidt algorithm
+	
+	// validate input
+	if ( lines  == 0 || cols  == 0) 
+	{
+		fprintf(stderr,"Invalid arguments in Gram Schmidt\n");
+		exit(1);
+	}
+
+	unsigned int i;
+	unsigned int j;
+	unsigned int k;
+
+	// copy into new matrix
+	memmove( Q , A , lines * cols * sizeof(double));
+
+	unsigned int n = lines ;   // dimensionality of each vector
+	double *proj_ij = new double [n];
+
+	for (unsigned int j = 0 ; j < cols ; ++j ) 
+	{
+		for ( unsigned int i = 0; i < j ; ++i ) 
+		{
+
+			// compute proj(v_i, v_j)
+			double vij = 0.;     // dotprod(v_i, v_j)
+			double vii = 0.;     // dotprod(v_i, v_i)
+			double ti;
+			double tj;
+			for (unsigned int k = 0; k < n; ++k ) 
+			{
+				ti = matrix_access(Q, lines, cols, k, i);
+				tj = matrix_access(Q, lines, cols, k, j);
+				vij += ti * tj;
+				vii += ti * ti;
+			}
+			// TODO : vii should be 1.0 from normalization step below
+			double g = vij / vii;
+
+			// complete projection
+			for (unsigned int k = 0 ; k < n; ++k )
+			{
+				proj_ij[k] = matrix_access(  Q , lines, cols, k, i) * g;
+			}
+
+			// subtract projection from v_j
+			for ( unsigned int k = 0; k < n; ++k ) 
+			{
+				matrix_access( Q , lines, cols, k, j ) -= proj_ij[k];
+			}
+		}
+
+		// normalize v_j
+		double vjj = 0.;     // dotprod(v_j, v_j)
+		double tj  = 0.;
+		for ( unsigned int k = 0; k < n; ++k ) 
+		{
+			tj = matrix_access( Q , lines, cols, k, j);
+			vjj += tj * tj;
+		}
+		// TODO : check magnitude of vjj
+		double g = 1. / sqrt( vjj );
+		for ( unsigned int k = 0; k < n; ++k ) 
+		{
+			matrix_access( Q , lines, cols , k , j) *= g;
+		}
+	}
+	delete [] proj_ij;
+}
+
+double * MatrixModule::matrix_multiply ( double * _X, unsigned int _XR, unsigned int _XC,
+				  double * _Y, unsigned int _YR, unsigned int _YC,
+				  double * _Z, unsigned int _ZR, unsigned int _ZC )
+{
+	// ensure lengths are valid
+	if ( _ZR != _XR || _ZC != _YC || _XC != _YR ) {
+		fprintf(stderr,"invalid dimensions in multiplication \n");
+		exit(1);
+	}
+
+	unsigned int r, c, i;
+
+	for (unsigned int r=0; r<_ZR; ++r ) 
+	{
+		for ( unsigned int c = 0 ; c < _ZC; ++c ) 
+		{
+			double sum = 0.0f;
+			for ( unsigned int i = 0; i < _XC; ++i ) 
+			{
+				sum += matrix_access(_X,_XR,_XC,r,i) *
+					matrix_access(_Y,_YR,_YC,i,c);
+			}
+			matrix_access(_Z,_ZR,_ZC,r,c) = sum ;
+		}
+	}
+}
+void MatrixModule::matrix_copy(double * toCopy , const double * fromCopy , unsigned int size ) 
+{
+	for(unsigned int i = 0 ; i < size ; ++ i )
+	{
+		toCopy[i] = fromCopy[i];
+	}
+}

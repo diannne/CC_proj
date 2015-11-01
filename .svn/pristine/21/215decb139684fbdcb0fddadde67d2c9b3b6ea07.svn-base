@@ -1,0 +1,55 @@
+//===========================================================================
+//===========================================================================
+//===========================================================================
+//==      PdfTransfer.h   ==   Author: Diana-Maria Popa       ==
+//===========================================================================
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#ifndef __PDFTRANSFER__H__
+#define __PDFTRANSFER__H__
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+#include "./FreeImage/FreeImage.h"
+#include "Direct_Access_Image.h"
+#include "MatrixModule.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include "Histogram.h"
+#include <vector>
+//===========================================================================
+//===========================================================================
+
+//===========================================================================
+//===========================================================================
+class PdfTransfer
+{
+public:
+	PdfTransfer(unsigned int,unsigned int,unsigned int,unsigned int);
+	//do not forget about freeing stuff !!!
+	~PdfTransfer();
+	bool NDPdfTransfer( double * , double * , double **  );
+private:
+	unsigned int _iterations;
+	unsigned int _projections;
+	unsigned int _inputSize;
+	unsigned int _paletteSize;
+	std::vector<double>  SinglePdfTransfer(Histogram * , Histogram * );
+	MatrixModule *_matrixModule;
+	void CreateHistograms(double *,  unsigned int , 
+									double *, unsigned int  , unsigned int , 
+									Histogram **, Histogram ** );
+	std::vector<double> linearInterpolation(std::vector<double>,
+											std::vector<double>,
+											std::vector<double>);
+	//to be deleted
+	std::vector<double> oldLinearInterpolation(std::vector<double>,
+											std::vector<double>,
+											std::vector<double>);
+};
+#endif
