@@ -1,4 +1,0 @@
-It took 14.07 for the color transfer with: 
- input ->>> height = 234 width = 499 
- palette ->>> height = 216 width = 498 
- 

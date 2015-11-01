@@ -22,25 +22,25 @@
 
 //===========================================================================
 //===========================================================================
-class ColorTransfer
-{
+
+class ColorTransfer {
 public:
-	//constructor receiveing input image and palette
-	ColorTransfer(KImage *input , KImage *target ,  unsigned int iterations = 10 );
-	KImage * applyRecoloring();
-	bool saveImage();
-	~ColorTransfer();
+    //constructor with input image, palette image and iterations
+    ColorTransfer(KImage *input, KImage *target, unsigned int iterations = 10);
+    KImage * applyRecoloring();
+    bool saveImage();
+    ~ColorTransfer();
 private:
-	float * _inputImage;
-	float * _palette;
-	unsigned int _iterations ;
-	float **_rotations;
-	void generateRotationMatrix();
-	float adjustPixel(float);
-	MatrixModule *_matrixModule;
-	PdfTransfer *_pdfTransfer;
-	KImage * _input;
-	KImage * _gradedImage;
-	KImage * _paletteImage;
+    float * _inputImage;
+    float * _palette;
+    unsigned int _iterations;
+    float **_rotations;
+    void generateRotationMatrix();
+    float adjustPixel(float);
+    MatrixModule *_matrixModule;
+    PdfTransfer *_pdfTransfer;
+    KImage * _input;
+    KImage * _gradedImage;
+    KImage * _paletteImage;
 };
 #endif
